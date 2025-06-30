@@ -1,7 +1,0 @@
-streamlit
-supabase-py
-psycopg2-binary
-openai
-PyPDF2
-python-docx
-pandas
