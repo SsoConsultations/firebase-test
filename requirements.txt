@@ -1,5 +1,6 @@
 streamlit
-firebase-admin
+supabase-py
+psycopg2-binary
 openai
 PyPDF2
 python-docx
