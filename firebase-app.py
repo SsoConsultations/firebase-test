@@ -1,133 +1,92 @@
 import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, firestore
-import time
+import os
+from supabase import create_client, Client
 
-# --- Firebase Initialization ---
-def initialize_firebase_app():
+# --- Supabase Initialization ---
+def initialize_supabase_client() -> Client:
     """
-    Initializes the Firebase Admin SDK using secrets from Streamlit.
+    Initializes and returns the Supabase client.
+    Reads Supabase URL and Anon Key from environment variables.
     """
-    global firebase_app, db
+    supabase_url = st.secrets["SUPABASE_URL"]
+    supabase_key = st.secrets["SUPABASE_ANON_KEY"]
 
-    if firebase_admin._apps: # Check if Firebase app is already initialized
-        print("DEBUG (Firebase Init): Firebase app already initialized.")
-        st.info("Firebase app already initialized.")
-        db = firestore.client(app=firebase_admin.get_app())
-        st.session_state['firestore_db'] = db
-        return firebase_admin.get_app()
+    if not supabase_url or not supabase_key:
+        st.error("Supabase URL or Anon Key not found in environment variables. "
+                 "Please configure SUPABASE_URL and SUPABASE_ANON_KEY.")
+        st.stop() # Stop the app if crucial variables are missing
 
-    print("DEBUG (Firebase Init): Attempting to initialize Firebase app...")
     try:
-        # Define all required individual service account key fields
-        # These keys MUST match the names in your .streamlit/secrets.toml
-        required_secrets = [
-            "firebase_admin_sdk_type",
-            "firebase_admin_sdk_project_id",
-            "firebase_admin_sdk_private_key_id",
-            "firebase_admin_sdk_private_key",
-            "firebase_admin_sdk_client_email",
-            "firebase_admin_sdk_client_id",
-            "firebase_admin_sdk_auth_uri",
-            "firebase_admin_sdk_token_uri",
-            "firebase_admin_sdk_auth_provider_x509_cert_url",
-            "firebase_admin_sdk_client_x509_cert_url",
-            "firebase_admin_sdk_universe_domain"
-        ]
-
-        missing_secrets = [s for s in required_secrets if s not in st.secrets]
-        if missing_secrets:
-            st.error(f"Missing Firebase Admin SDK secrets: {', '.join(missing_secrets)}. Please configure them in .streamlit/secrets.toml or Streamlit Cloud secrets.")
-            print(f"ERROR (Firebase Init): Missing secrets: {missing_secrets}")
-            st.stop() # Stop the app if crucial secrets are missing
-            
-        # Construct the credentials dictionary from individual secrets
-        # IMPORTANT: Replace '\\n' with '\n' for the private_key if it's escaped in secrets.toml
-        firebase_service_account_config = {
-            "type": st.secrets["firebase_admin_sdk_type"],
-            "project_id": st.secrets["firebase_admin_sdk_project_id"],
-            "private_key_id": st.secrets["firebase_admin_sdk_private_key_id"],
-            "private_key": st.secrets["firebase_admin_sdk_private_key"].replace('\\n', '\n'),
-            "client_email": st.secrets["firebase_admin_sdk_client_email"],
-            "client_id": st.secrets["firebase_admin_sdk_client_id"],
-            "auth_uri": st.secrets["firebase_admin_sdk_auth_uri"],
-            "token_uri": st.secrets["firebase_admin_sdk_token_uri"],
-            "auth_provider_x509_cert_url": st.secrets["firebase_admin_sdk_auth_provider_x509_cert_url"],
-            "client_x509_cert_url": st.secrets["firebase_admin_sdk_client_x509_cert_url"],
-            "universe_domain": st.secrets["firebase_admin_sdk_universe_domain"],
-        }
-        print("DEBUG (Firebase Init): Firebase service account config loaded from secrets.")
-
-        # Initialize the app with credentials
-        firebase_app = firebase_admin.initialize_app(credentials.Certificate(firebase_service_account_config))
-        db = firestore.client(app=firebase_app)
-        
-        st.session_state['firestore_db'] = db # Store in session state for access
-        
-        st.success("Firebase Admin SDK and Firestore client initialized successfully!")
-        print("DEBUG (Firebase Init): Firebase app and Firestore client initialized.")
-        return firebase_app
-
+        # Check if client already exists in session state to prevent re-initialization
+        if 'supabase_client' not in st.session_state:
+            st.session_state['supabase_client'] = create_client(supabase_url, supabase_key)
+            st.success("Supabase client initialized successfully!")
+        return st.session_state['supabase_client']
     except Exception as e:
-        st.error(f"Error initializing Firebase services: {e}")
-        print(f"ERROR (Firebase Init): Initialization failed - {e}")
+        st.error(f"Error initializing Supabase client: {e}")
         st.stop() # Stop the app on critical initialization failure
 
 # --- Main Streamlit Application Logic ---
 def main():
-    st.set_page_config(page_title="Firebase Test App", page_icon="🔥")
-    st.title("Firebase Connection Test")
-    st.write("This app tests connectivity to Firebase Admin SDK and Firestore.")
+    st.set_page_config(page_title="Supabase Connection Test", page_icon="🟢")
+    st.title("Supabase Connection Test")
+    st.write("This app tests connectivity to your Supabase project and the 'test_messages' table.")
 
-    # Initialize Firebase
-    app = initialize_firebase_app()
+    # Initialize Supabase client
+    supabase: Client = initialize_supabase_client()
     
-    if app:
-        st.header("Firestore Test")
-        test_collection_name = "test_connectivity"
-        test_doc_id = "streamlit_test_doc"
+    if supabase:
+        st.header("Supabase 'test_messages' Table Operations")
         
-        # Access Firestore client from session state
-        db_client = st.session_state.get('firestore_db')
-        
-        if db_client:
-            col1, col2 = st.columns(2)
+        col1, col2 = st.columns(2)
 
-            with col1:
-                st.subheader("Write Data")
-                test_message = st.text_input("Message to save to Firestore", "Hello Firebase!")
-                if st.button("Save to Firestore"):
-                    try:
-                        doc_ref = db_client.collection(test_collection_name).document(test_doc_id)
-                        doc_ref.set({
-                            "message": test_message,
-                            "timestamp": firestore.SERVER_TIMESTAMP
-                        })
-                        st.success(f"Message saved: '{test_message}' to '{test_collection_name}/{test_doc_id}'")
-                        print(f"DEBUG (Firestore Write): Saved message '{test_message}'")
-                    except Exception as e:
-                        st.error(f"Error writing to Firestore: {e}")
-                        print(f"ERROR (Firestore Write): {e}")
+        with col1:
+            st.subheader("Write Data")
+            new_message = st.text_input("Enter a message to save:", "Hello Supabase from Streamlit!")
+            author = st.text_input("Your Name/ID:", "TestUser")
 
-            with col2:
-                st.subheader("Read Data")
-                if st.button("Read from Firestore"):
-                    try:
-                        doc_ref = db_client.collection(test_collection_name).document(test_doc_id)
-                        doc = doc_ref.get()
-                        if doc.exists:
-                            data = doc.to_dict()
-                            st.write("Latest data from Firestore:")
-                            st.json(data)
-                            print(f"DEBUG (Firestore Read): Read data: {data}")
-                        else:
-                            st.info("No data found at specified path. Try saving first!")
-                            print("DEBUG (Firestore Read): Document does not exist.")
-                    except Exception as e:
-                        st.error(f"Error reading from Firestore: {e}")
-                        print(f"ERROR (Firestore Read): {e}")
-        else:
-            st.warning("Firestore client not available. Initialization might have failed.")
+            if st.button("Save Message to Supabase"):
+                try:
+                    response = supabase.table("test_messages").insert(
+                        {"message_text": new_message, "author": author}
+                    ).execute()
+                    if response.data:
+                        st.success(f"Message saved: '{new_message}' by '{author}'")
+                        st.write("Response from Supabase:", response.data)
+                    else:
+                        st.error(f"Failed to save message: {response.error}")
+                        st.write("Supabase Error:", response.error)
+                except Exception as e:
+                    st.error(f"An error occurred during save: {e}")
+
+        with col2:
+            st.subheader("Read Data")
+            if st.button("Load Messages from Supabase"):
+                try:
+                    response = supabase.table("test_messages").select("*").order("created_at", desc=True).limit(5).execute()
+                    if response.data:
+                        st.write("Latest messages from 'test_messages' table:")
+                        for msg in response.data:
+                            st.json(msg)
+                    else:
+                        st.info("No messages found in 'test_messages' table.")
+                        st.write("Supabase Error (if any):", response.error)
+                except Exception as e:
+                    st.error(f"An error occurred during load: {e}")
+
+    st.markdown("---")
+    st.info("Remember: For security in a real app, manage Row Level Security (RLS) in Supabase and "
+            "use server-side logic for sensitive operations, not direct client-side calls for all data.")
 
 if __name__ == "__main__":
+    # Clear any lingering Firebase objects if this is a fresh start
+    if 'firestore_db' in st.session_state:
+        del st.session_state['firestore_db']
+    if 'bucket' in st.session_state:
+        del st.session_state['bucket']
+    # You might also want to ensure no old firebase_admin apps are present
+    # if firebase_admin._apps:
+    #     for app_name in list(firebase_admin._apps.keys()):
+    #         firebase_admin.delete_app(firebase_admin.get_app(app_name))
+
     main()
