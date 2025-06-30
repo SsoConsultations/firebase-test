@@ -1,0 +1,6 @@
+streamlit
+firebase-admin
+openai
+PyPDF2
+python-docx
+pandas
